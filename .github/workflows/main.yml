@@ -1,9 +1,9 @@
 name: Check New Listings
 
 on:
-  workflow_dispatch: 
   schedule:
-    - cron: '0 */24 * * *'
+    - cron: '0 */24 * * *' 
+  workflow_dispatch:  
 
 jobs:
   check-listings:
@@ -11,17 +11,14 @@ jobs:
     env:
       SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
       RECIPIENT_EMAIL: simon-thiesen@hotmail.com
-      PREVIOUS_LISTINGS: ${{ steps.set-previous.outputs.previous_listings }}
+      PREVIOUS_LISTINGS: ${{ secrets.PREVIOUS_LISTINGS || '' }}  
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
 
     - name: Install dependencies
       run: pip install beautifulsoup4 requests sendgrid
-
-    - name: Set previous listings
-      id: set-previous
-      run: echo "::set-output name=previous_listings::$(echo '')"
 
     - name: Run script
       run: python your_script.py
