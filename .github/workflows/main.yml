@@ -21,4 +21,4 @@ jobs:
       run: pip install beautifulsoup4 requests sendgrid
 
     - name: Run script
-      run: TvangsauktionerListings.py
+      run: python TvangsauktionerListings.py
