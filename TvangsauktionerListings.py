@@ -69,43 +69,65 @@ def fetch_html(url: str) -> str:
 def parse_listings(html: str) -> List[Listing]:
     """Parse listing entries from page HTML.
 
-    NOTE: This relies on current structure; may need adjustment if site changes.
-    We look for anchor tags inside article/card containers that represent listings.
+    NOTE: Boligsiden uses Next.js with server-side rendering. The data is embedded
+    in the HTML as escaped JSON. We search for the foreclosure array and parse it.
     """
-    soup = BeautifulSoup(html, 'html.parser')
-
     listings: List[Listing] = []
-    # Heuristic selectors - adjust if necessary:
-    # Example pattern: <a class="card" href="/tvangsauktioner/bolig/..."> ... </a>
-    for a in soup.select('a.card, a[data-test="card"], div.card__content a'):
-        href = a.get('href') or ''
-        title = ' '.join(a.get_text(strip=True).split())
-        if not href or not title:
-            continue
-        # Normalize URL & ID
-        if href.startswith('/'):
-            full_url = BASE_URL + href
-        else:
-            full_url = href
-        # Derive ID from last path segment
-        listing_id = full_url.rstrip('/').split('/')[-1]
-        listings.append(Listing(id=listing_id, title=title, url=full_url))
 
-    # Fallback selector if above yields nothing (site structure changed)
-    if not listings:
-        for div in soup.select('div.card__info'):
-            title = ' '.join(div.get_text(strip=True).split())
-            parent_link = div.find_parent('a')
-            if not parent_link:
+    # Find the escaped foreclosure array in the HTML
+    # Format: \"foreclosure\":[{...},{...}]
+    fc_start = html.find('\\"foreclosure\\":[')
+    
+    if fc_start < 0:
+        print("Warning: Could not find foreclosure data in HTML")
+        return listings
+    
+    try:
+        # Position at the start of the array (the '[')
+        i = fc_start + len('\\"foreclosure\\":[') - 1
+        
+        # Extract a large chunk and unescape it
+        chunk = html[i:i+100000]  # generous chunk size
+        unescaped = chunk.replace('\\"', '"').replace('\\\\', '\\')
+        
+        # Use JSONDecoder.raw_decode to parse just the array
+        # This handles the case where there's extra data after the array
+        decoder = json.JSONDecoder()
+        data, end_pos = decoder.raw_decode(unescaped)
+        
+        # Process each foreclosure listing
+        for item in data:
+            if not isinstance(item, dict):
                 continue
-            href = parent_link.get('href') or ''
-            if href.startswith('/'):
-                full_url = BASE_URL + href
-            else:
-                full_url = href
-            listing_id = full_url.rstrip('/').split('/')[-1]
-            listings.append(Listing(id=listing_id, title=title, url=full_url))
-
+            
+            # Extract key fields
+            address_id = item.get('addressID', '')
+            address = item.get('addressFreetext', '')
+            address_type = item.get('boligsidenAddressType', '')
+            auction_date = item.get('auctionDatetime', '')
+            
+            if not address_id or not address:
+                continue
+            
+            # Build listing details
+            title = f"{address_type}: {address}"
+            if auction_date:
+                # Extract just the date part (YYYY-MM-DD)
+                date_part = auction_date.split('T')[0]
+                title = f"{address_type}: {address} (Auktion: {date_part})"
+            
+            # Construct URL using address ID
+            listing_url = f"{BASE_URL}/tvangsauktioner/bolig/{address_id}"
+            
+            listings.append(Listing(
+                id=address_id,
+                title=title,
+                url=listing_url
+            ))
+                    
+    except (json.JSONDecodeError, ValueError, AttributeError) as e:
+        print(f"Failed to parse foreclosure data: {e}")
+    
     return listings
 
 
